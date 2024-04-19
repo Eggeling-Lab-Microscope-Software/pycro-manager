@@ -1,4 +1,6 @@
 import json
+import warnings
+
 
 class AcqNotification:
 
@@ -12,6 +14,7 @@ class AcqNotification:
 
     class Hardware:
         PRE_HARDWARE = "pre_hardware"
+        PRE_Z_DRIVE = "pre_z_drive"
         POST_HARDWARE = "post_hardware"
 
         @staticmethod
@@ -20,8 +23,9 @@ class AcqNotification:
 
     class Camera:
         PRE_SEQUENCE_STARTED = "pre_sequence_started"
+        POST_SEQUENCE_STOPPED = "post_sequence_stopped"
         PRE_SNAP = "pre_snap"
-        POST_EXPOSURE = "post_exposure"
+        POST_SNAP = "post_snap"
 
         @staticmethod
         def to_string():
@@ -35,29 +39,29 @@ class AcqNotification:
         def to_string():
             return "image"
 
-    def __init__(self, type, id, phase=None):
+    def __init__(self, type, payload, milestone=None):
         if type == AcqNotification.Acquisition or type == AcqNotification.Acquisition.to_string():
             self.type = AcqNotification.Acquisition
-            self.id = id
-            self.phase = phase
+            self.payload = payload
+            self.milestone = milestone
         elif (type == AcqNotification.Image or type == AcqNotification.Image.to_string()) and \
-              phase == AcqNotification.Image.DATA_SINK_FINISHED:
+              milestone == AcqNotification.Image.DATA_SINK_FINISHED:
             self.type = AcqNotification.Image
-            self.id = id
-            self.phase = phase
-        elif phase in [AcqNotification.Camera.PRE_SNAP, AcqNotification.Camera.POST_EXPOSURE,
-                     AcqNotification.Camera.PRE_SEQUENCE_STARTED]:
+            self.payload = payload
+            self.milestone = milestone
+        elif milestone in [AcqNotification.Camera.PRE_SNAP, AcqNotification.Camera.POST_SNAP,
+                     AcqNotification.Camera.PRE_SEQUENCE_STARTED, AcqNotification.Camera.POST_SEQUENCE_STOPPED]:
             self.type = AcqNotification.Camera
-            self.id = json.loads(id) if isinstance(id, str) else id # convert from '{'time': 5}' to {'time': 5}
-        elif phase in [AcqNotification.Hardware.PRE_HARDWARE, AcqNotification.Hardware.POST_HARDWARE]:
+            self.payload = json.loads(payload) if isinstance(payload, str) else payload # convert from '{'time': 5}' to {'time': 5}
+        elif milestone in [AcqNotification.Hardware.PRE_HARDWARE, AcqNotification.Hardware.PRE_Z_DRIVE, AcqNotification.Hardware.POST_HARDWARE]:
             self.type = AcqNotification.Hardware
-            self.id = json.loads(id) if isinstance(id, str) else id # convert from '{'time': 5}' to {'time': 5}
-        elif phase == AcqNotification.Image.IMAGE_SAVED:
+            self.payload = json.loads(payload) if isinstance(payload, str) else payload # convert from '{'time': 5}' to {'time': 5}
+        elif milestone == AcqNotification.Image.IMAGE_SAVED:
             self.type = AcqNotification.Image
-            self.id = id
+            self.payload = payload
         else:
-            raise ValueError("Unknown phase")
-        self.phase = phase
+            warnings.warn(f"Unknown notification type {type} with milestone {milestone}")
+        self.milestone = milestone
 
 
     @staticmethod
@@ -76,25 +80,29 @@ class AcqNotification:
     def create_image_saved_notification(image_descriptor):
         return AcqNotification(AcqNotification.Image, image_descriptor, AcqNotification.Image.IMAGE_SAVED)
 
+    def __repr__(self):
+        json = self.to_json()
+        return f"AcqNotification({json})"
+
     def to_json(self):
         n = {}
         n['type'] = self.type
-        n['phase'] = self.phase
-        if self.id:
-            n['id'] = self.id
+        n['milestone'] = self.milestone
+        if self.payload:
+            n['payload'] = self.payload
         return n
 
     @staticmethod
     def from_json(json):
         return AcqNotification(json['type'],
-                               json['id'] if 'id' in json else None,
-                               json['phase'] if 'phase' in json else None)
+                               json['payload'] if 'payload' in json else None,
+                               json['milestone'] if 'milestone' in json else None)
 
     def is_acquisition_finished_notification(self):
-        return self.phase == AcqNotification.Acquisition.ACQ_EVENTS_FINISHED
+        return self.milestone == AcqNotification.Acquisition.ACQ_EVENTS_FINISHED
 
     def is_data_sink_finished_notification(self):
-        return self.phase == AcqNotification.Image.DATA_SINK_FINISHED
+        return self.milestone == AcqNotification.Image.DATA_SINK_FINISHED
 
     def is_image_saved_notification(self):
-        return self.phase == AcqNotification.Image.IMAGE_SAVED
+        return self.milestone == AcqNotification.Image.IMAGE_SAVED
